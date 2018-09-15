@@ -300,7 +300,7 @@ static char buffer[6];
         temp1.setText(buffer);  //Update Nextion display
 
 
-        if ( tempInne < data.baseTempHouse - 0.3 && heatingOn) {
+        if ( tempInne < data.baseTempHouse - 0.3 && data.heatingOn) {
           Serial.println("För lite - Öka shunt"); 
           if (statusShuntBild != 2 ) {
             nShuntBild.setPictureID(2);
@@ -316,7 +316,7 @@ static char buffer[6];
               Serial.println("No use to raise more since its already to high");
             }
           
-        } else if (tempInne > data.baseTempHouse + 0.3 && heatingOn ) {
+        } else if (tempInne > data.baseTempHouse + 0.3 && data.heatingOn ) {
           Serial.println("För mycket - Minska shunt");
           if (statusShuntBild != 1 ) {
             nShuntBild.setPictureID(1);
@@ -481,7 +481,7 @@ void callbackPower(NextionEventType type, INextionTouchable *widget)
       digitalWrite(shuntMinska, HIGH);
     } else {
       nPower.setBackgroundColour(NEX_COL_GREEN);
-      heatingOn = true;
+      data.heatingOn = true;
       eepromStatus = true; //Make sure we write down the eeprom on next check 
       mqttSend("config/heaterStatus",1);
     }    
