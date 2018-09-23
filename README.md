@@ -19,4 +19,6 @@ Pending:
 * Redo the code so it does work with data and settings structure. Both can be sent/fetched/set over MQTT
 * Better temperature error code handling
 * Support to controll our pool heater at same time. 
+* add telnet logger
+* add version info on display
 
