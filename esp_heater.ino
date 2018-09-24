@@ -86,11 +86,13 @@ float maxLedning = 60.0;
 float t1, t2, t3, t4 = 0.0;
 int laddgrad =0;
 
+
 //Define the different onewire sensors below
 String givareHus = "28bc849703000033";
-String givareUte = "28af699703000007";
+String givareUte = "2886fdca01000085";
 String givareLedning = "28a812cb0100001a";  // temperatur ledning till huset
 String givareLedningRetur ="28523ecb0100007e";  // Retur från huset
+String givarePannrum = "10361da5010800c1"; //temperature in pannrum
 // 2894409703000019 - Pool retur
 // 284c7097030000f8  = pool from?
 // 284f6897030000e3 = pool to efter Heatr exchanger
@@ -132,8 +134,11 @@ Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO
 //Adafruit_MQTT_Publish mqttTempHus = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/temps/hus");
 
 // Setup a feed called 'onoff' for subscribing to changes.
-Adafruit_MQTT_Subscribe mqttHeatingOnOff = Adafruit_MQTT_Subscribe(&mqtt, "config/heating");
-Adafruit_MQTT_Subscribe mqttTempInne = Adafruit_MQTT_Subscribe(&mqtt, "sensor/inne/temperature");
+Adafruit_MQTT_Subscribe mqttHeatingOnOff = Adafruit_MQTT_Subscribe(&mqtt, "config/heating/set"); // heating on and off
+Adafruit_MQTT_Subscribe mqttTempInne = Adafruit_MQTT_Subscribe(&mqtt, "sensor/inne/temperature");  //What temperature do we have in the house right now?
+Adafruit_MQTT_Subscribe mqttTempInneSet = Adafruit_MQTT_Subscribe(&mqtt, "config/heating/temp");  //What temperature do we have in the house right now?
+// status/heating/get -- this gives us ack the status on the heater
+// status/heating/temp reports back the value for the temp
 
 //------------------------------------------
 //WIFI
@@ -171,6 +176,7 @@ void SetupDS18B20(){
 int calcPanna() {
   float value;
   value = (((t1-data.min)/(data.max-data.min)+(t2-data.min)/(data.max-data.min)+(t3-data.min)/(data.max-data.min)+(t4-data.min)/(data.max-data.min))/4);
+  mqttSend("status/heating/soc",value);
   return (int)(value * 100);
 }
 
@@ -209,6 +215,7 @@ if( now - lastSearch > durationSearch ){ //Take a measurement at a fixed time (d
 
   // Loop through each device, print out address
   for(int i=0;i<numberOfDevices; i++){
+    yield(); // We need to yield each loop. When fetching more than 8 sensors wtd software reset will occour. You could potentially add a small delay too if needed. 
     // Search the wire for address
     if( DS18B20.getAddress(devAddr[i], i) ){
       //devAddr[i] = tempDeviceAddress;
@@ -251,7 +258,6 @@ if( now - lastSearch > durationSearch ){ //Take a measurement at a fixed time (d
 }
 
 bool checkEeprom() {
-  EEPROM.get(0, data);
     if (eepromStatus) {
       eepromStatus = false;
       EEPROM.put(0, data);
@@ -288,7 +294,7 @@ static char buffer[6];
   if( millis() - lastCheckHouse > durationCheckHouse ){
         if (tempLedning > maxLedning ) {
           Serial.println("Minska stigare eftersom temp in är för hög");
-           shuntTime = millis()+ shuntRunning*3;
+           shuntTime = millis()+ shuntRunning*2;
            digitalWrite(shuntMinska, HIGH);
         }
         int faktor = int(data.baseTempHouse - tempInne);
@@ -300,7 +306,7 @@ static char buffer[6];
         temp1.setText(buffer);  //Update Nextion display
 
 
-        if ( tempInne < data.baseTempHouse - 0.3 && data.heatingOn) {
+        if ( tempInne < data.baseTempHouse - 0.2 && data.heatingOn) {
           Serial.println("För lite - Öka shunt"); 
           if (statusShuntBild != 2 ) {
             nShuntBild.setPictureID(2);
@@ -316,7 +322,7 @@ static char buffer[6];
               Serial.println("No use to raise more since its already to high");
             }
           
-        } else if (tempInne > data.baseTempHouse + 0.3 && data.heatingOn ) {
+        } else if (tempInne > data.baseTempHouse + 0.2 && data.heatingOn ) {
           Serial.println("För mycket - Minska shunt");
           if (statusShuntBild != 1 ) {
             nShuntBild.setPictureID(1);
@@ -343,11 +349,21 @@ static char buffer[6];
 void TempLoop(long now){
 
   if( now - lastTemp > durationTemp ){ //Take a measurement at a fixed time (durationTemp = 5000ms, 5s)
+    
+    //move this to its own send status loop xx seconds
+      if (data.heatingOn) {
+        mqttSend("status/heating/get",1);
+      } else {
+        mqttSend("status/heating/get",0);
+      } 
+      mqttSend("status/heating/temperatur",data.baseTempHouse);
+   
+    
     Serial.print("Reading analog input ");
     String StrshuntPos = (String)(int)(((analogRead(A0)-155.0)/874.0)*100) + "%";
     shuntPos = (int)(((analogRead(A0)-155.0)/874.0)*100);
     Serial.println (StrshuntPos);
-    mqttSend("shunt/pos",StrshuntPos.toFloat());
+    mqttSend("status/shunt/pos",StrshuntPos.toFloat());
     char buffer[4];
     StrshuntPos.toCharArray(buffer, 4);
     nShuntPos.setText(buffer);  //Update Nextion display
@@ -365,6 +381,7 @@ void TempLoop(long now){
       
   
     for(int i=0; i<numberOfDevices; i++){  // Go through sensors again and set them to corect variables if needed
+      ESP.wdtFeed();
       if ( givareHus == GetAddressToString(devAddr[i]) ) { //Leta reda på positionen för Husets temperatur
           //Serial.println("Dont do anything with this for now");    
         } else if ( givareUte == GetAddressToString(devAddr[i]) ) {
@@ -463,7 +480,6 @@ void callback(NextionEventType type, INextionTouchable *widget)
     static char buffer[6];
     dtostrf(data.baseTempHouse, 6, 2, buffer);
     temp2.setText(buffer);
-    dtostrf(tempInne, 6, 2, buffer);
     slider.setValue(data.baseTempHouse);
   }
 }
@@ -476,14 +492,14 @@ void callbackPower(NextionEventType type, INextionTouchable *widget)
       nPower.setBackgroundColour(NEX_COL_RED);
       data.heatingOn = false;
       eepromStatus = true; //Make sure we write down the eeprom on next check 
-      mqttSend("config/heaterStatus",0);
+      mqttSend("status/heating/get",0);
       shuntTime = millis() + 100000;
       digitalWrite(shuntMinska, HIGH);
     } else {
       nPower.setBackgroundColour(NEX_COL_GREEN);
       data.heatingOn = true;
       eepromStatus = true; //Make sure we write down the eeprom on next check 
-      mqttSend("config/heaterStatus",1);
+      mqttSend("status/heating/get",1);
     }    
   }
 }
@@ -505,7 +521,6 @@ void callback3(NextionEventType type, INextionTouchable *widget)
     static char buffer[6];
     dtostrf(data.baseTempHouse, 6, 2, buffer);
     temp2.setText(buffer);
-    dtostrf(tempInne, 6, 2, buffer);
     slider.setValue(data.baseTempHouse);
 
     
@@ -530,7 +545,6 @@ void callback2(NextionEventType type, INextionTouchable *widget)
     static char buffer[6];
     dtostrf(data.baseTempHouse, 6, 2, buffer);
     temp2.setText(buffer);
-    dtostrf(tempInne, 6, 2, buffer);
     
   }
 }
@@ -589,9 +603,9 @@ void checkMQTT() {
 
       if (strcmp((char *)mqttHeatingOnOff.lastread, "2") == 0) {
       if (data.heatingOn) {
-        mqttSend("config/heaterStatus",1);
+        mqttSend("status/heating/get",1);
       } else {
-        mqttSend("config/heaterStatus",0);
+        mqttSend("status/heating/get",0);
       } 
      }else if (strcmp((char *)mqttHeatingOnOff.lastread, "1") == 0) {
          nPower.setBackgroundColour(NEX_COL_GREEN);
@@ -609,6 +623,16 @@ void checkMQTT() {
       tempInne = atof((char *)mqttTempInne.lastread);
       Serial.print(" MQTT read temperature: ");
       Serial.println((char *)mqttTempInne.lastread);
+      
+     } else if (subscription == &mqttTempInneSet){
+      data.baseTempHouse = atof((char *)mqttTempInneSet.lastread);
+      eepromStatus = true; 
+      Serial.print(" MQTT read SET temperature: ");
+      Serial.println(data.baseTempHouse);
+      static char buffer[6];
+      dtostrf(data.baseTempHouse, 6, 2, buffer);
+      slider.setValue(data.baseTempHouse);
+      temp2.setText(buffer);
     }
     
   
@@ -648,6 +672,7 @@ delay(5500);
 // Below should be changed to read a json with config data instead and parse new settings?!
   mqtt.subscribe(&mqttHeatingOnOff);
   mqtt.subscribe(&mqttTempInne);
+   mqtt.subscribe(&mqttTempInneSet);
   MQTT_connect();
   
   //Setup DS18b20 temperature sensor
@@ -690,8 +715,9 @@ void loop() {
   long t = millis();
    
   //server.handleClient();
-  
+  yield();
   TempLoop( t );  // Update temp values
+  yield();
   checkHouseTemp(); //Kolla om vi behöver justera värmen till huset 
   nex.poll();
 
@@ -706,6 +732,7 @@ void loop() {
    if (mqttStatus) {
       checkMQTT();
    }
+   yield();
    initDS18B20(t); // Check for new sensors
 
 
