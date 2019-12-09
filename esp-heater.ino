@@ -14,7 +14,7 @@
 #include <NextionPicture.h>
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
-#include <Timer.h>
+#include <Timer.h>  // https://github.com/JChristensen/Timer
 
 SoftwareSerial nextionSerial(13, 12); // RX, TX
 Timer timerObject;
@@ -650,14 +650,16 @@ delay(5500);
   pinMode(shuntOka, OUTPUT);
   pinMode(shuntMinska, OUTPUT);  
 
-    timerObject.every(10000, TempLoop);  // Update temp values
-    timerObject.every(30000, checkHouseTemp);  // Manage house temperature
-    timerObject.every(15000, initDS18B20);  // Check for new sensors
-    timerObject.every(20000, checkWifi);  // Check wifi status
-    timerObject.every(25000, MQTT_connect);  // CCheck MQTT status
-    timerObject.every(10000, mqttSendInfo);  // Send basic info over mqtt
+  
+  // All of our timers running
+  timerObject.every(10000, TempLoop);  // Update temp values
+  timerObject.every(30000, checkHouseTemp);  // Manage house temperature
+  timerObject.every(15000, initDS18B20);  // Check for new sensors
+  timerObject.every(20000, checkWifi);  // Check wifi status
+  timerObject.every(25000, MQTT_connect);  // CCheck MQTT status
+  timerObject.every(10000, mqttSendInfo);  // Send basic info over mqtt
     
-    timerObject.every(5000, checkEeprom);  // Check if we should save eeprom info
+  timerObject.every(5000, checkEeprom);  // Check if we should save eeprom info
     
 
   
