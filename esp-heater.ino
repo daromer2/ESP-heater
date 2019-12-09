@@ -3,7 +3,6 @@
 #include <WiFiClient.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include "SSD1306Wire.h"
 #include <Nextion.h>
 #include <NextionPage.h>
 #include <NextionButton.h>
@@ -17,7 +16,7 @@
 #include "Adafruit_MQTT_Client.h"
 
 
-//SSD1306Wire  display(0x3c, D1, D5);
+
 
 SoftwareSerial nextionSerial(13, 12); // RX, TX
 
