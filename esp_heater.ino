@@ -3,7 +3,7 @@
 #include <WiFiClient.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include "SSD1306Wire.h"
+//#include "SSD1306Wire.h"
 #include <Nextion.h>
 #include <NextionPage.h>
 #include <NextionButton.h>
@@ -15,11 +15,12 @@
 #include <NextionPicture.h>
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
+#include <Timer.h>
 
 
-//SSD1306Wire  display(0x3c, D1, D5);
 
 SoftwareSerial nextionSerial(13, 12); // RX, TX
+Timer timerObject;
 
 Nextion nex(nextionSerial);
 //NextionPage pgButton(nex, 0, 0, "pgButton");
@@ -62,16 +63,13 @@ int numberOfDevices; //Number of temperature devices found
 DeviceAddress devAddr[ONE_WIRE_MAX_DEV];  //An array device temperature sensors
 float tempDev[ONE_WIRE_MAX_DEV]; //Saving the last measurement of temperature
 float tempDevLast[ONE_WIRE_MAX_DEV]; //Previous temperature measurement
-long lastTemp; //The last measurement
 long lastSearch;
 long shuntTime = 0;
 int statusShuntBild = 0;
+int rec = 0;
 
-long lastCheckHouse; 
-long durationCheckHouse = 30 * 1000; //Frequenxy of checking if we should change shunt for heating the house -- Also stored in data structure
-
-const int durationTemp = 10 * 1000; //The frequency of temperature measurement
-const int durationSearch = 15 * 1000; //The frequency of search measurement
+const int durationTemp = 10 * 1000; //The frequency of temperature measurement  //bort
+const int durationSearch = 15 * 1000; //The frequency of search measurement //
 const int durationDisplay = 1000;  
 const int shuntRunning = 1400; // Frequency on how often we should should crosschekc if shunt is running
 
@@ -81,7 +79,7 @@ float stigare;
 float tempInne = 28.0;
 float tempLedning = 0.0;
 float tempUte = 0.0;
-float maxLedning = 60.0;
+float maxLedning = 65.0;
 
 float t1, t2, t3, t4 = 0.0;
 int laddgrad =0;
@@ -145,9 +143,6 @@ Adafruit_MQTT_Subscribe mqttTempInneSet = Adafruit_MQTT_Subscribe(&mqtt, "config
 const char* ssid = "Esperyd";
 const char* password = "Esperyd4";
 
-//------------------------------d------------
-//HTTP
-ESP8266WebServer server(80);
 
 //------------------------------------------
 //Convert device id to String
@@ -170,7 +165,7 @@ void SetupDS18B20(){
   }else{
     Serial.println("OFF");
   }
-   initDS18B20(0);
+   initDS18B20();
 }
 
 int calcPanna() {
@@ -188,7 +183,6 @@ void MQTT_connect() {
     mqttStatus = true;
     return;
   } 
-
   Serial.println("Connecting to MQTT... ");
   if ((ret = mqtt.connect()) != 0) {
     mqttStatus = false;
@@ -203,13 +197,11 @@ void MQTT_connect() {
 }
 
 
-void initDS18B20(long now) {
-if( now - lastSearch > durationSearch ){ //Take a measurement at a fixed time (durationTemp = 5000ms, 5s)
+void initDS18B20() {
   Serial.println("*** Starting search for sensors ***");
   DS18B20.begin();
   numberOfDevices = DS18B20.getDeviceCount();
   //display.clear();
-  lastTemp = millis();
   DS18B20.requestTemperatures();
   float tempC;
 
@@ -231,33 +223,23 @@ if( now - lastSearch > durationSearch ){ //Take a measurement at a fixed time (d
     }
 
     //Get resolution of DS18b20
-    Serial.print(" Res: ");
-    Serial.print(DS18B20.getResolution( devAddr[i] ));
+    //Serial.print(" Res: ");
+    //Serial.print(DS18B20.getResolution( devAddr[i] ));
 
     //Read temperature from DS18b20
-    tempC = DS18B20.getTempC( devAddr[i] );
-    Serial.print("Temp: ");
-    Serial.println(tempC);
-
+    //tempC = DS18B20.getTempC( devAddr[i] );
+    //Serial.print("Temp: ");
+    //Serial.println(tempC);
+Serial.println("");
   }
 
    /* display.drawString(0, 0, String(tempC));
     display.drawString(0, 13, String(numberOfDevices));
     display.drawString(0, 26, String(WiFi.localIP()));
     display.display();*/
-    Serial.print("Search is over in: ");
-    Serial.println(millis()-lastTemp);
-      
-    checkEeprom();
- 
-     // Finally check if mqtt is down
-    MQTT_connect();
-    lastSearch = millis();  //Remember the last time measurement
 }
 
-}
-
-bool checkEeprom() {
+void checkEeprom() {
     if (eepromStatus) {
       eepromStatus = false;
       EEPROM.put(0, data);
@@ -291,10 +273,10 @@ if (mqttStatus == false) {
 
 void checkHouseTemp() {
 static char buffer[6];
-  if( millis() - lastCheckHouse > durationCheckHouse ){
+ 
         if (tempLedning > maxLedning ) {
           Serial.println("Minska stigare eftersom temp in är för hög");
-           shuntTime = millis()+ shuntRunning*2;
+           shuntTime = millis()+ shuntRunning*1;
            digitalWrite(shuntMinska, HIGH);
         }
         int faktor = int(data.baseTempHouse - tempInne);
@@ -306,7 +288,7 @@ static char buffer[6];
         temp1.setText(buffer);  //Update Nextion display
 
 
-        if ( tempInne < data.baseTempHouse - 0.2 && data.heatingOn) {
+        if ( tempInne < data.baseTempHouse - 0.1 && data.heatingOn) {
           Serial.println("För lite - Öka shunt"); 
           if (statusShuntBild != 2 ) {
             nShuntBild.setPictureID(2);
@@ -322,7 +304,7 @@ static char buffer[6];
               Serial.println("No use to raise more since its already to high");
             }
           
-        } else if (tempInne > data.baseTempHouse + 0.2 && data.heatingOn ) {
+        } else if (tempInne > data.baseTempHouse + 0.1 && data.heatingOn ) {
           Serial.println("För mycket - Minska shunt");
           if (statusShuntBild != 1 ) {
             nShuntBild.setPictureID(1);
@@ -339,29 +321,27 @@ static char buffer[6];
           if (statusShuntBild != 3 ) {
             nShuntBild.setPictureID(3);
           }
-        }
-   lastCheckHouse = millis();     
-  }
+        } 
     
 }
 
-//Loop measuring the temperature
-void TempLoop(long now){
+void mqttSendInfo() {
 
-  if( now - lastTemp > durationTemp ){ //Take a measurement at a fixed time (durationTemp = 5000ms, 5s)
-    
-    //move this to its own send status loop xx seconds
+      //move this to its own send status loop xx seconds
       if (data.heatingOn) {
         mqttSend("status/heating/get",1);
       } else {
         mqttSend("status/heating/get",0);
       } 
       mqttSend("status/heating/temperatur",data.baseTempHouse);
-   
-    
+}
+
+//Loop measuring the temperature
+void TempLoop(){
+
     Serial.print("Reading analog input ");
-    String StrshuntPos = (String)(int)(((analogRead(A0)-155.0)/874.0)*100) + "%";
-    shuntPos = (int)(((analogRead(A0)-155.0)/874.0)*100);
+    String StrshuntPos = (String)(int)(((analogRead(A0)-155.0)/670.0)*100) + "%";
+    shuntPos = (int)(((analogRead(A0)-155.0)/670.0)*100);
     Serial.println (StrshuntPos);
     mqttSend("status/shunt/pos",StrshuntPos.toFloat());
     char buffer[4];
@@ -419,52 +399,8 @@ void TempLoop(long now){
         nT3.setText(buffer);  //Update Nextion display
                 dtostrf(t4, 6, 2, buffer);
         nT4.setText(buffer);  //Update Nextion display
-    lastTemp = millis();  //Remember the last time measurement
-    }
+    
 }
-
-//------------------------------------------
-void HandleRoot(){
-  String message = "Number of devices: ";
-  message += numberOfDevices;
-  message += "\r\n<br>";
-  char temperatureString[6];
-
-  message += "<table border='1'>\r\n";
-  message += "<tr><td>Device id</td><td>Temperature</td></tr>\r\n";
-  for(int i=0;i<numberOfDevices;i++){
-    dtostrf(tempDev[i], 2, 2, temperatureString);
-    Serial.print( "Sending temperature: " );
-    Serial.println( temperatureString );
-
-    message += "<tr><td>";
-    message += GetAddressToString( devAddr[i] );
-    message += "</td>\r\n";
-    message += "<td>";
-    message += temperatureString;
-    message += "</td></tr>\r\n";
-    message += "\r\n";
-  }
-  message += "</table>\r\n";
-  
-  server.send(200, "text/html", message );
-}
-
-void HandleNotFound(){
-  String message = "File Not Found\n\n";
-  message += "URI: ";
-  message += server.uri();
-  message += "\nMethod: ";
-  message += (server.method() == HTTP_GET)?"GET":"POST";
-  message += "\nArguments: ";
-  message += server.args();
-  message += "\n";
-  for (uint8_t i=0; i<server.args(); i++){
-    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-  }
-  server.send(404, "text/html", message);
-}
-
 
 void callback(NextionEventType type, INextionTouchable *widget)
 {
@@ -594,6 +530,23 @@ Serial.println("Checking wifi");
     }
 }
 
+void checkWifi() {
+
+  if (rec > 10) {
+    Serial.println("Restarting due to WIFI issues");
+    ESP.restart(); // restart is better then reset that potentially can keep variables in memory.... 
+  }
+ if (WiFi.status() != WL_CONNECTED) {
+  Serial.println("Wifi was disconnected, reconnecting");
+  WiFi.begin(ssid, password);
+  rec++;
+ } else
+  rec = 0;
+ {
+  
+ }
+  
+}
 void checkMQTT() {
  Adafruit_MQTT_Subscribe *subscription;
   while ((subscription = mqtt.readSubscription(10))) {
@@ -650,6 +603,8 @@ void setup() {
 
   //Setup WIFI
   Serial.println("Setting up wifi");
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+  WiFi.hostname("ESP_HEATER");
   WiFi.begin(ssid, password);
 delay(5500);
   //Wait for WIFI connection
@@ -664,15 +619,10 @@ delay(5500);
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
-  server.on("/", HandleRoot);
-  server.onNotFound( HandleNotFound );
-  server.begin();
-  Serial.println("HTTP server started at ip " + WiFi.localIP().toString() );
-
-// Below should be changed to read a json with config data instead and parse new settings?!
+ // Below should be changed to read a json with config data instead and parse new settings?!
   mqtt.subscribe(&mqttHeatingOnOff);
   mqtt.subscribe(&mqttTempInne);
-   mqtt.subscribe(&mqttTempInneSet);
+  mqtt.subscribe(&mqttTempInneSet);
   MQTT_connect();
   
   //Setup DS18b20 temperature sensor
@@ -691,7 +641,6 @@ delay(5500);
 
 
   // Init Eprom and check if we got temperature stored. if not set then set it. 
-  
   EEPROM.begin(512);
   EEPROM.get(0, data);
   if (data.baseTempHouse >40 || data.baseTempHouse < 10 ) {  // If the eeprom doesnt have proper data in temp then reset them all!
@@ -703,6 +652,17 @@ delay(5500);
   // Set output pins for controlling the shunt
   pinMode(shuntOka, OUTPUT);
   pinMode(shuntMinska, OUTPUT);  
+
+    timerObject.every(10000, TempLoop);  // Update temp values
+    timerObject.every(30000, checkHouseTemp);  // Manage house temperature
+    timerObject.every(15000, initDS18B20);  // Check for new sensors
+    timerObject.every(20000, checkWifi);  // Check wifi status
+    timerObject.every(25000, MQTT_connect);  // CCheck MQTT status
+    timerObject.every(10000, mqttSendInfo);  // Send basic info over mqtt
+    
+    timerObject.every(5000, checkEeprom);  // Check if we should save eeprom info
+    
+
   
   Serial.println("Setup done");
 }
@@ -711,17 +671,11 @@ delay(5500);
 //***********************************************************************************
 
 void loop() {
-  yield();
-  long t = millis();
-   
-  //server.handleClient();
-  yield();
-  TempLoop( t );  // Update temp values
-  yield();
-  checkHouseTemp(); //Kolla om vi behöver justera värmen till huset 
+
+  timerObject.update(); // Timer Triggers
   nex.poll();
 
-   if (shuntTime >0 && shuntTime < t) {
+  if (shuntTime >0 && shuntTime < millis()) {
     Serial.println("Need to stop shunt movement");
     digitalWrite(shuntOka, LOW); 
     digitalWrite(shuntMinska, LOW); 
@@ -732,9 +686,6 @@ void loop() {
    if (mqttStatus) {
       checkMQTT();
    }
-   yield();
-   initDS18B20(t); // Check for new sensors
-
 
  if (screenchanged) {
   previousMillisDisplay = millis(); 
